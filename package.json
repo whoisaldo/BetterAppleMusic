@@ -1,0 +1,49 @@
+{
+  "name": "better-apple-music",
+  "version": "1.0.0",
+  "description": "A better Apple Music desktop player built with Electron, React, and TypeScript",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "start": "npm run build && electron .",
+    "dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:9000 && npm run dev:main\"",
+    "dev:main": "cross-env NODE_ENV=development electron .",
+    "dev:renderer": "webpack serve --config webpack.config.js --mode development",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:main": "tsc --project tsconfig.main.json",
+    "build:renderer": "webpack --config webpack.config.js --mode production",
+    "clean": "rimraf dist",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "electron-updater": "^6.8.3",
+    "node-fetch": "^2.7.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/node-fetch": "^2.6.11",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.27",
+    "concurrently": "^8.2.0",
+    "copy-webpack-plugin": "^12.0.0",
+    "cross-env": "^7.0.3",
+    "css-loader": "^6.10.0",
+    "electron": "^27.3.0",
+    "html-webpack-plugin": "^5.6.0",
+    "mini-css-extract-plugin": "^2.8.0",
+    "postcss": "^8.4.35",
+    "postcss-loader": "^8.1.0",
+    "rimraf": "^5.0.5",
+    "style-loader": "^3.3.4",
+    "tailwindcss": "^3.4.0",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.0",
+    "wait-on": "^7.2.0",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.0",
+    "webpack-dev-server": "^4.15.0"
+  }
+}
