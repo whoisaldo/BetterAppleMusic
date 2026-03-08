@@ -1,43 +1,13 @@
-import React, { useRef, useCallback } from 'react';
+import React from 'react';
 import { useMusicKit } from './hooks/useMusicKit';
-import { useNowPlaying } from './hooks/useNowPlaying';
+import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { NowPlayingBar } from './components/NowPlayingBar';
 import { LoginScreen } from './components/LoginScreen';
 import { SearchBar } from './components/SearchBar';
 
 export default function App() {
   const { status, musicKit, error, authorize, unauthorize } = useMusicKit();
-  const nowPlaying = useNowPlaying(musicKit);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const mk = musicKit as {
-    play?: () => Promise<void>;
-    pause?: () => Promise<void>;
-    skipToNextItem?: () => Promise<void>;
-    skipToPreviousItem?: () => Promise<void>;
-  } | null;
-
-  async function handlePlay() {
-    try { await mk?.play?.(); } catch (e) { console.error(e); }
-  }
-  async function handlePause() {
-    try { await mk?.pause?.(); } catch (e) { console.error(e); }
-  }
-  async function handleNext() {
-    try { await mk?.skipToNextItem?.(); } catch (e) { console.error(e); }
-  }
-  async function handlePrevious() {
-    try { await mk?.skipToPreviousItem?.(); } catch (e) { console.error(e); }
-  }
-
-  const handlePlayPreview = useCallback((url: string) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.play().catch(console.error);
-  }, []);
+  const [player, controls] = useAudioPlayer(musicKit);
 
   // Loading state
   if (status === 'idle' || status === 'loading') {
@@ -60,20 +30,26 @@ export default function App() {
   return (
     <div className="h-screen w-screen bg-black flex flex-col overflow-hidden">
       {/* Title bar */}
-      <div className="h-8 bg-[#0a0a0a] flex items-center justify-between px-4 drag-region flex-shrink-0 border-b border-white/5">
+      <div className="h-9 bg-[#0a0a0a] flex items-center justify-between px-4 drag-region flex-shrink-0 border-b border-white/[0.04]">
         <div className="flex items-center gap-2 no-drag">
-          <div className="w-3 h-3 rounded-full bg-white/10 hover:bg-red-500 transition-colors cursor-pointer"
-               onClick={() => window.electronAPI?.close()} />
-          <div className="w-3 h-3 rounded-full bg-white/10 hover:bg-yellow-500 transition-colors cursor-pointer"
-               onClick={() => window.electronAPI?.minimize()} />
-          <div className="w-3 h-3 rounded-full bg-white/10 hover:bg-green-500 transition-colors cursor-pointer"
-               onClick={() => window.electronAPI?.maximize()} />
+          <div
+            className="w-3 h-3 rounded-full bg-white/10 hover:bg-[#FF5F57] transition-colors cursor-pointer"
+            onClick={() => window.electronAPI?.close()}
+          />
+          <div
+            className="w-3 h-3 rounded-full bg-white/10 hover:bg-[#FDBC40] transition-colors cursor-pointer"
+            onClick={() => window.electronAPI?.minimize()}
+          />
+          <div
+            className="w-3 h-3 rounded-full bg-white/10 hover:bg-[#33C748] transition-colors cursor-pointer"
+            onClick={() => window.electronAPI?.maximize()}
+          />
         </div>
-        <span className="text-white/20 text-[11px] font-medium">BetterAppleMusic</span>
+        <span className="text-white/15 text-[11px] font-medium tracking-wide">BetterAppleMusic</span>
         <button
           type="button"
           onClick={unauthorize}
-          className="text-white/20 hover:text-white/50 text-[11px] transition-colors no-drag"
+          className="text-white/15 hover:text-white/40 text-[11px] transition-colors no-drag"
         >
           Sign out
         </button>
@@ -82,15 +58,15 @@ export default function App() {
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <div className="w-56 bg-[#0a0a0a] border-r border-white/5 flex flex-col p-3 gap-1 flex-shrink-0">
-          <div className="px-3 py-2 mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+        <div className="w-[220px] bg-[#0a0a0a] border-r border-white/[0.04] flex flex-col py-2 px-2 flex-shrink-0">
+          <div className="px-3 py-3 mb-1">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-lg shadow-pink-500/20">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="white">
                   <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
                 </svg>
               </div>
-              <span className="text-white/70 text-xs font-semibold">BetterAppleMusic</span>
+              <span className="text-white/50 text-[11px] font-bold uppercase tracking-widest">BAM</span>
             </div>
           </div>
 
@@ -98,30 +74,50 @@ export default function App() {
           <NavItem icon="home" label="Home" />
           <NavItem icon="library" label="Library" />
 
-          <div className="mt-6 px-3">
-            <p className="text-white/20 text-[10px] font-semibold uppercase tracking-widest mb-2">
+          <div className="mt-6 px-3 mb-1">
+            <p className="text-white/15 text-[10px] font-bold uppercase tracking-[0.15em]">
               Your Library
             </p>
           </div>
           <NavItem icon="heart" label="Liked Songs" />
           <NavItem icon="clock" label="Recently Played" />
           <NavItem icon="list" label="Playlists" />
+
+          {/* Now playing artwork (large) in sidebar */}
+          {player.currentTrack?.artworkUrl && (
+            <div className="mt-auto px-3 pb-3">
+              <div className="rounded-xl overflow-hidden shadow-2xl shadow-black/60">
+                <img
+                  src={player.currentTrack.artworkUrl.replace(/\d+x\d+/, '300x300')}
+                  alt=""
+                  className="w-full aspect-square object-cover"
+                />
+              </div>
+              <div className="mt-2 px-1">
+                <p className="text-white/70 text-[12px] font-medium truncate">
+                  {player.currentTrack.name}
+                </p>
+                <p className="text-white/30 text-[10px] truncate">
+                  {player.currentTrack.artistName}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Content */}
-        <div className="flex-1 bg-gradient-to-b from-[#1a1a2e] to-[#0a0a0a] overflow-hidden flex flex-col">
-          <SearchBar musicKit={musicKit} onPlayPreview={handlePlayPreview} />
+        <div className="flex-1 bg-gradient-to-b from-[#1a1a2e]/80 via-[#0f0f15] to-[#0a0a0a] overflow-hidden flex flex-col">
+          <SearchBar
+            musicKit={musicKit}
+            onPlayTrack={controls.playTrack}
+            currentTrackId={player.currentTrack?.id}
+            isPlaying={player.isPlaying}
+          />
         </div>
       </div>
 
       {/* Now Playing Bar */}
-      <NowPlayingBar
-        nowPlaying={nowPlaying}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onNext={handleNext}
-        onPrevious={handlePrevious}
-      />
+      <NowPlayingBar player={player} controls={controls} />
     </div>
   );
 }
@@ -139,13 +135,13 @@ function NavItem({ icon, label, active }: { icon: string; label: string; active?
   return (
     <button
       type="button"
-      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all text-sm ${
+      className={`flex items-center gap-3 px-3 py-[7px] rounded-lg text-left transition-all text-[13px] ${
         active
-          ? 'bg-white/10 text-white font-medium'
-          : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+          ? 'bg-white/[0.08] text-white font-medium'
+          : 'text-white/35 hover:text-white/60 hover:bg-white/[0.04]'
       }`}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0">
         {icons[icon]}
       </svg>
       <span>{label}</span>

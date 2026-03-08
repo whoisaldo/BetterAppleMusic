@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface Track {
   id: string;
@@ -29,8 +29,34 @@ export interface AudioPlayerControls {
   setVolume: (vol: number) => void;
 }
 
-export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+interface MKInstance {
+  setQueue: (options: { song: string }) => Promise<void>;
+  play: () => Promise<void>;
+  pause: () => void;
+  stop: () => void;
+  skipToNextItem: () => Promise<void>;
+  skipToPreviousItem: () => Promise<void>;
+  seekToTime: (time: number) => Promise<void>;
+  volume: number;
+  isPlaying: boolean;
+  nowPlayingItem?: {
+    attributes?: {
+      name?: string;
+      artistName?: string;
+      albumName?: string;
+      artwork?: { url?: string };
+      durationInMillis?: number;
+    };
+  };
+  currentPlaybackTime?: number;
+  currentPlaybackDuration?: number;
+  playbackState: number | string;
+  addEventListener: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeEventListener: (event: string, handler: (...args: unknown[]) => void) => void;
+}
+
+export function useAudioPlayer(musicKit: unknown): [AudioPlayerState, AudioPlayerControls] {
+  const mk = musicKit as MKInstance | null;
   const [state, setState] = useState<AudioPlayerState>({
     currentTrack: null,
     isPlaying: false,
@@ -39,139 +65,185 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
     queue: [],
     queueIndex: -1,
   });
+  const queueRef = useRef<Track[]>([]);
+  const queueIndexRef = useRef(-1);
 
-  // Create audio element once
+  // Subscribe to MusicKit playback events
   useEffect(() => {
-    const audio = new Audio();
-    audio.volume = 0.7;
-    audioRef.current = audio;
+    if (!mk || typeof mk.addEventListener !== 'function') return;
 
-    const onTimeUpdate = () => {
-      setState((s) => ({
-        ...s,
-        currentTime: audio.currentTime,
-        duration: audio.duration || 0,
-      }));
-    };
-
-    const onPlay = () => setState((s) => ({ ...s, isPlaying: true }));
-    const onPause = () => setState((s) => ({ ...s, isPlaying: false }));
-    const onEnded = () => {
-      // Auto-advance to next track
-      setState((s) => {
-        const nextIndex = s.queueIndex + 1;
-        if (nextIndex < s.queue.length) {
-          const nextTrack = s.queue[nextIndex];
-          if (nextTrack.previewUrl) {
-            audio.src = nextTrack.previewUrl;
-            audio.play().catch(console.error);
-          }
-          return { ...s, currentTrack: nextTrack, queueIndex: nextIndex, currentTime: 0 };
-        }
-        return { ...s, isPlaying: false, currentTime: 0 };
-      });
-    };
-
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
-    audio.addEventListener('ended', onEnded);
-
-    return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
-      audio.removeEventListener('ended', onEnded);
-      audio.pause();
-      audio.src = '';
-    };
-  }, []);
-
-  const playTrack = useCallback((track: Track, queue?: Track[]) => {
-    const audio = audioRef.current;
-    if (!audio || !track.previewUrl) return;
-
-    const newQueue = queue || [track];
-    const idx = queue ? queue.findIndex((t) => t.id === track.id) : 0;
-
-    audio.src = track.previewUrl;
-    audio.play().catch(console.error);
-
-    setState({
-      currentTrack: track,
-      isPlaying: true,
-      currentTime: 0,
-      duration: 0,
-      queue: newQueue,
-      queueIndex: idx >= 0 ? idx : 0,
-    });
-  }, []);
-
-  const play = useCallback(() => {
-    audioRef.current?.play().catch(console.error);
-  }, []);
-
-  const pause = useCallback(() => {
-    audioRef.current?.pause();
-  }, []);
-
-  const toggle = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) audio.play().catch(console.error);
-    else audio.pause();
-  }, []);
-
-  const next = useCallback(() => {
-    setState((s) => {
-      const nextIndex = s.queueIndex + 1;
-      if (nextIndex < s.queue.length) {
-        const nextTrack = s.queue[nextIndex];
-        const audio = audioRef.current;
-        if (audio && nextTrack.previewUrl) {
-          audio.src = nextTrack.previewUrl;
-          audio.play().catch(console.error);
-        }
-        return { ...s, currentTrack: nextTrack, queueIndex: nextIndex, currentTime: 0 };
-      }
-      return s;
-    });
-  }, []);
-
-  const previous = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    // If more than 3 seconds in, restart current track
-    if (audio.currentTime > 3) {
-      audio.currentTime = 0;
-      return;
+    function onPlaybackStateChange() {
+      const playing = mk!.playbackState === 2 || mk!.playbackState === 'playing';
+      setState((s) => ({ ...s, isPlaying: playing }));
     }
 
-    setState((s) => {
-      const prevIndex = s.queueIndex - 1;
-      if (prevIndex >= 0) {
-        const prevTrack = s.queue[prevIndex];
-        if (prevTrack.previewUrl) {
-          audio.src = prevTrack.previewUrl;
-          audio.play().catch(console.error);
-        }
-        return { ...s, currentTrack: prevTrack, queueIndex: prevIndex, currentTime: 0 };
+    function onTimeChange() {
+      setState((s) => ({
+        ...s,
+        currentTime: mk!.currentPlaybackTime ?? 0,
+        duration: mk!.currentPlaybackDuration ?? 0,
+      }));
+    }
+
+    function onNowPlayingChange() {
+      const item = mk!.nowPlayingItem;
+      if (!item?.attributes) return;
+      const attrs = item.attributes;
+      setState((s) => ({
+        ...s,
+        currentTrack: s.currentTrack
+          ? {
+              ...s.currentTrack,
+              name: attrs.name ?? s.currentTrack.name,
+              artistName: attrs.artistName ?? s.currentTrack.artistName,
+              albumName: attrs.albumName ?? s.currentTrack.albumName,
+              artworkUrl: attrs.artwork?.url
+                ? attrs.artwork.url.replace('{w}', '500').replace('{h}', '500')
+                : s.currentTrack.artworkUrl,
+            }
+          : null,
+        duration: (attrs.durationInMillis ?? 0) / 1000,
+      }));
+    }
+
+    function onQueueEnd() {
+      // Auto-advance to next track in our queue
+      const nextIdx = queueIndexRef.current + 1;
+      if (nextIdx < queueRef.current.length) {
+        const nextTrack = queueRef.current[nextIdx];
+        queueIndexRef.current = nextIdx;
+        mk!.setQueue({ song: nextTrack.id, startPlaying: true } as Record<string, unknown>)
+          .catch(console.error);
+        setState((s) => ({
+          ...s,
+          currentTrack: nextTrack,
+          queueIndex: nextIdx,
+          currentTime: 0,
+        }));
       }
-      audio.currentTime = 0;
-      return s;
-    });
-  }, []);
+    }
 
-  const seek = useCallback((time: number) => {
-    const audio = audioRef.current;
-    if (audio) audio.currentTime = time;
-  }, []);
+    mk.addEventListener('playbackStateDidChange', onPlaybackStateChange);
+    mk.addEventListener('playbackTimeDidChange', onTimeChange);
+    mk.addEventListener('nowPlayingItemDidChange', onNowPlayingChange);
+    mk.addEventListener('queueIsReady', onQueueEnd);
 
-  const setVolume = useCallback((vol: number) => {
-    const audio = audioRef.current;
-    if (audio) audio.volume = Math.max(0, Math.min(1, vol));
-  }, []);
+    return () => {
+      mk.removeEventListener('playbackStateDidChange', onPlaybackStateChange);
+      mk.removeEventListener('playbackTimeDidChange', onTimeChange);
+      mk.removeEventListener('nowPlayingItemDidChange', onNowPlayingChange);
+      mk.removeEventListener('queueIsReady', onQueueEnd);
+    };
+  }, [musicKit]);
+
+  const playTrack = useCallback(
+    async (track: Track, queue?: Track[]) => {
+      if (!mk) return;
+
+      const newQueue = queue || [track];
+      const idx = newQueue.findIndex((t) => t.id === track.id);
+      queueRef.current = newQueue;
+      queueIndexRef.current = idx >= 0 ? idx : 0;
+
+      setState({
+        currentTrack: track,
+        isPlaying: false,
+        currentTime: 0,
+        duration: 0,
+        queue: newQueue,
+        queueIndex: idx >= 0 ? idx : 0,
+      });
+
+      try {
+        await mk.setQueue({ song: track.id, startPlaying: true } as Record<string, unknown>);
+      } catch (err: unknown) {
+        const msg = String(err);
+        // Ignore "interrupted" errors — these are benign race conditions
+        if (!msg.includes('interrupted') && !msg.includes('abort')) {
+          console.error('[Player] playback error:', err);
+        }
+      }
+    },
+    [musicKit],
+  );
+
+  const play = useCallback(() => {
+    mk?.play().catch(console.error);
+  }, [musicKit]);
+
+  const pause = useCallback(() => {
+    mk?.pause();
+  }, [musicKit]);
+
+  const toggle = useCallback(() => {
+    if (!mk) return;
+    const playing = mk.playbackState === 2 || mk.playbackState === 'playing';
+    if (playing) mk.pause();
+    else mk.play().catch(console.error);
+  }, [musicKit]);
+
+  const next = useCallback(async () => {
+    if (!mk) return;
+    const nextIdx = queueIndexRef.current + 1;
+    if (nextIdx < queueRef.current.length) {
+      const nextTrack = queueRef.current[nextIdx];
+      queueIndexRef.current = nextIdx;
+      setState((s) => ({
+        ...s,
+        currentTrack: nextTrack,
+        queueIndex: nextIdx,
+        currentTime: 0,
+      }));
+      try {
+        await mk.setQueue({ song: nextTrack.id, startPlaying: true } as Record<string, unknown>);
+      } catch (err) {
+        const msg = String(err);
+        if (!msg.includes('interrupted') && !msg.includes('abort')) console.error('[Player] next error:', err);
+      }
+    }
+  }, [musicKit]);
+
+  const previous = useCallback(async () => {
+    if (!mk) return;
+    // If more than 3 seconds in, restart current track
+    if ((mk.currentPlaybackTime ?? 0) > 3) {
+      mk.seekToTime(0).catch(console.error);
+      return;
+    }
+    const prevIdx = queueIndexRef.current - 1;
+    if (prevIdx >= 0) {
+      const prevTrack = queueRef.current[prevIdx];
+      queueIndexRef.current = prevIdx;
+      setState((s) => ({
+        ...s,
+        currentTrack: prevTrack,
+        queueIndex: prevIdx,
+        currentTime: 0,
+      }));
+      try {
+        await mk.setQueue({ song: prevTrack.id, startPlaying: true } as Record<string, unknown>);
+      } catch (err) {
+        const msg = String(err);
+        if (!msg.includes('interrupted') && !msg.includes('abort')) console.error('[Player] previous error:', err);
+      }
+    } else {
+      mk.seekToTime(0).catch(console.error);
+    }
+  }, [musicKit]);
+
+  const seek = useCallback(
+    (time: number) => {
+      mk?.seekToTime(time).catch(console.error);
+    },
+    [musicKit],
+  );
+
+  const setVolume = useCallback(
+    (vol: number) => {
+      if (mk) mk.volume = Math.max(0, Math.min(1, vol));
+    },
+    [musicKit],
+  );
 
   return [state, { playTrack, play, pause, toggle, next, previous, seek, setVolume }];
 }

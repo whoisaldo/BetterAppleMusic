@@ -9,6 +9,7 @@ import {
   nativeTheme,
   Menu,
   Tray,
+  components,
   type IpcMainInvokeEvent,
 } from 'electron';
 import path from 'path';
@@ -23,6 +24,7 @@ import { generateDeveloperToken } from './musickit/auth';
 const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
+
 
 // ---------------------------------------------------------------------------
 // Local static file server for production builds
@@ -606,6 +608,14 @@ app.on('window-all-closed', () => {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  // Wait for Widevine CDM to be installed (castlabs Electron for Content Security)
+  try {
+    await components.whenReady();
+    console.log('[main] Widevine CDM ready:', components.status());
+  } catch (err) {
+    console.warn('[main] Widevine CDM init failed:', err);
+  }
+
   // Start local HTTP server for production builds (needed for MusicKit auth postMessage)
   if (!isDev) {
     await startLocalServer();
