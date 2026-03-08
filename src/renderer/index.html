@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: http://localhost:*;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js-cdn.music.apple.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: http://localhost:* ws://localhost:*; media-src 'self' https: blob:; frame-src https://*.apple.com;" />
+    <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" data-web-components async></script>
     <title>Better Apple Music</title>
   </head>
   <body>

@@ -13,6 +13,8 @@ import {
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
+import { generateDeveloperToken } from './musickit/auth';
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -23,8 +25,75 @@ const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 
 // ---------------------------------------------------------------------------
+// Local static file server for production builds
+// MusicKit v3 auth requires an http:// origin for postMessage to work
+// ---------------------------------------------------------------------------
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json',
+};
+
+let localServerPort = 0;
+
+function startLocalServer(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const rendererDir = path.join(__dirname, '../renderer');
+    const server = http.createServer((req, res) => {
+      let filePath = path.join(rendererDir, req.url === '/' ? 'index.html' : req.url!);
+      // Prevent directory traversal
+      if (!filePath.startsWith(rendererDir)) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(404);
+          res.end('Not found');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(data);
+      });
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (addr && typeof addr === 'object') {
+        localServerPort = addr.port;
+        console.log(`[main] Local renderer server on http://127.0.0.1:${localServerPort}`);
+        resolve(localServerPort);
+      } else {
+        reject(new Error('Failed to start local server'));
+      }
+    });
+
+    server.on('error', reject);
+
+    // Clean up on app quit
+    app.on('will-quit', () => server.close());
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Single-instance lock – prevent duplicate windows
 // ---------------------------------------------------------------------------
+
+
+//test block
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -101,10 +170,12 @@ function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      webSecurity: true,
+      sandbox: false,
       spellcheck: false,
       webviewTag: false,
-      devTools: isDev,
+      plugins: true,
+      devTools: true,
     },
   });
 
@@ -153,19 +224,41 @@ function createMainWindow(): BrowserWindow {
     mainWindow = null;
   });
 
-  // Block new-window attempts (links open in external browser)
+  // Allow MusicKit OAuth popups from Apple domains so postMessage works back to parent
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes('apple.com')) {
+      return { action: 'allow' };
+    }
     if (url.startsWith('https://') || url.startsWith('http://')) {
       shell.openExternal(url);
     }
     return { action: 'deny' };
   });
 
-  // Load the renderer
+  // When MusicKit popup opens, watch for URL changes that indicate auth completion
+  win.webContents.on('did-create-window', (childWindow) => {
+    console.log('[main] Auth popup opened');
+
+    // Watch for navigation to the callback URL that contains the auth token
+    childWindow.webContents.on('will-redirect', (_event, url) => {
+      console.log('[main] Auth popup redirect:', url);
+    });
+
+    childWindow.webContents.on('did-navigate', (_event, url) => {
+      console.log('[main] Auth popup navigated:', url);
+    });
+  });
+
+  // Log load failures for debugging
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[did-fail-load] ${validatedURL} — ${errorCode}: ${errorDescription}`);
+  });
+
+  // Load the renderer — always via http:// so MusicKit postMessage auth works
   if (isDev) {
     win.loadURL('http://localhost:9000');
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'));
+    win.loadURL(`http://127.0.0.1:${localServerPort}/index.html`);
   }
 
   return win;
@@ -321,6 +414,17 @@ function registerIpcHandlers(): void {
     mainWindow?.setTitle(title);
   });
 
+  // ---- Developer token (MusicKit) ----
+  ipcMain.handle('get-developer-token', async () => {
+    try {
+      const token = generateDeveloperToken();
+      return { success: true, token };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: message };
+    }
+  });
+
   // ---- Theme ----
   ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
 
@@ -382,13 +486,20 @@ function registerIpcHandlers(): void {
 
 function hardenSession(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // Only apply our CSP to our own pages, not to external pages (Apple auth, etc.)
+    const url = details.url;
+    const isOurPage = url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1') || url.startsWith('file://');
+    if (!isOurPage) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            ? "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' ws://localhost:* http://localhost:* https://api.music.apple.com; img-src 'self' data: https:;"
-            : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.music.apple.com; img-src 'self' data: https:;",
+            ? "default-src 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js-cdn.music.apple.com; connect-src 'self' ws://localhost:* http://localhost:* https://api.music.apple.com https://*.apple.com https://*.mzstatic.com; media-src 'self' https: blob:; img-src 'self' data: https:; frame-src https://*.apple.com;"
+            : "default-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js-cdn.music.apple.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.music.apple.com https://*.apple.com https://*.mzstatic.com; media-src 'self' https: blob:; img-src 'self' data: https:; frame-src https://*.apple.com;",
         ],
       },
     });
@@ -495,6 +606,11 @@ app.on('window-all-closed', () => {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  // Start local HTTP server for production builds (needed for MusicKit auth postMessage)
+  if (!isDev) {
+    await startLocalServer();
+  }
+
   hardenSession();
   buildAppMenu();
   registerIpcHandlers();

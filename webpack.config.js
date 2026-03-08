@@ -61,6 +61,7 @@ module.exports = {
   devServer: {
     port: 9000,
     hot: true,
+    setupExitSignals: true,
     static: {
       directory: path.join(__dirname, 'dist/renderer'),
     },

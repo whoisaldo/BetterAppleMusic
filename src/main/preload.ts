@@ -8,6 +8,7 @@ const INVOKE_CHANNELS = [
   'window:is-maximized',
   'window:is-full-screen',
   'window:set-title',
+  'get-developer-token',
   'theme:get',
   'theme:set',
   'shell:open-external',
@@ -63,6 +64,14 @@ const electronAPI = {
   // ---- App info ----
   getVersion: () => ipcRenderer.invoke('app:version') as Promise<string>,
   getPath: (name: string) => ipcRenderer.invoke('app:path', name) as Promise<string | null>,
+
+  // ---- MusicKit developer token ----
+  getDeveloperToken: () =>
+    ipcRenderer.invoke('get-developer-token') as Promise<{
+      success: boolean;
+      token?: string;
+      error?: string;
+    }>,
 
   // ---- Dialog ----
   openFile: (options?: Record<string, unknown>) =>

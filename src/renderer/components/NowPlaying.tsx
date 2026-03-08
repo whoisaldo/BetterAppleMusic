@@ -1,50 +1,81 @@
 import React from 'react';
+import type { NowPlayingState } from '../hooks/useNowPlaying';
 
-const NowPlaying: React.FC = () => {
+interface Props {
+  nowPlaying: NowPlayingState;
+  onPlay: () => void;
+  onPause: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+}
+
+export function NowPlaying({ nowPlaying, onPlay, onPause, onNext, onPrevious }: Props) {
+  const { title, artist, album, artworkUrl, isPlaying, currentTime, duration } = nowPlaying;
+
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  function formatTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
   return (
-    <div className="h-20 bg-apple-surface/90 backdrop-blur-xl border-t border-apple-border flex items-center px-5 gap-4">
-      {/* Track Info */}
-      <div className="flex items-center gap-3 w-64">
-        <div className="w-12 h-12 rounded-lg bg-apple-elevated flex items-center justify-center text-apple-secondary">
-          ♪
+    <div className="flex flex-col items-center justify-center p-8 bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-auto">
+      {/* Artwork */}
+      <div className="w-64 h-64 rounded-xl overflow-hidden shadow-xl mb-6 bg-zinc-800 flex items-center justify-center">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt={album ?? 'Album Art'} className="w-full h-full object-cover" />
+        ) : (
+          <div className="text-zinc-600 text-5xl">♪</div>
+        )}
+      </div>
+
+      {/* Track info */}
+      <div className="text-center mb-6 w-full px-2">
+        <p className="text-white text-xl font-semibold truncate">{title ?? 'Not Playing'}</p>
+        <p className="text-zinc-400 text-sm mt-1 truncate">{artist ?? '—'}</p>
+        <p className="text-zinc-600 text-xs mt-0.5 truncate">{album ?? '—'}</p>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full mb-2">
+        <div className="w-full bg-zinc-700 rounded-full h-1">
+          <div
+            className="bg-pink-500 h-1 rounded-full transition-all duration-1000"
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
-        <div className="flex flex-col min-w-0">
-          <span className="text-sm font-medium truncate">No Track Playing</span>
-          <span className="text-xs text-apple-secondary truncate">Artist</span>
+        <div className="flex justify-between text-zinc-500 text-xs mt-1">
+          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(duration)}</span>
         </div>
       </div>
 
-      {/* Playback Controls */}
-      <div className="flex-1 flex flex-col items-center gap-1">
-        <div className="flex items-center gap-4">
-          <button className="text-apple-secondary hover:text-apple-text transition-colors text-lg">
-            ⏮
-          </button>
-          <button className="w-10 h-10 rounded-full bg-apple-text text-apple-bg flex items-center justify-center hover:scale-105 transition-transform">
-            ▶
-          </button>
-          <button className="text-apple-secondary hover:text-apple-text transition-colors text-lg">
-            ⏭
-          </button>
-        </div>
-        <div className="flex items-center gap-2 w-full max-w-md">
-          <span className="text-xs text-apple-secondary w-8 text-right">0:00</span>
-          <div className="flex-1 h-1 bg-apple-elevated rounded-full overflow-hidden">
-            <div className="h-full w-0 bg-apple-red rounded-full" />
-          </div>
-          <span className="text-xs text-apple-secondary w-8">0:00</span>
-        </div>
-      </div>
-
-      {/* Volume */}
-      <div className="flex items-center gap-2 w-32">
-        <span className="text-apple-secondary text-sm">🔊</span>
-        <div className="flex-1 h-1 bg-apple-elevated rounded-full overflow-hidden">
-          <div className="h-full w-2/3 bg-apple-text/50 rounded-full" />
-        </div>
+      {/* Controls */}
+      <div className="flex items-center gap-8 mt-4">
+        <button
+          type="button"
+          onClick={onPrevious}
+          className="text-zinc-400 hover:text-white text-2xl transition-colors"
+        >
+          ⏮
+        </button>
+        <button
+          type="button"
+          onClick={isPlaying ? onPause : onPlay}
+          className="w-14 h-14 bg-pink-500 hover:bg-pink-400 rounded-full flex items-center justify-center text-white text-2xl shadow-lg transition-all"
+        >
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          className="text-zinc-400 hover:text-white text-2xl transition-colors"
+        >
+          ⏭
+        </button>
       </div>
     </div>
   );
-};
-
-export default NowPlaying;
+}

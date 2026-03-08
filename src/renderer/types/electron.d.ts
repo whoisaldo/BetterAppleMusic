@@ -25,6 +25,13 @@ export interface ElectronAPI {
   checkForUpdate: () => Promise<unknown>;
   installUpdate: () => Promise<void>;
 
+  // MusicKit
+  getDeveloperToken: () => Promise<{
+    success: boolean;
+    token?: string;
+    error?: string;
+  }>;
+
   // Generic IPC
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
@@ -34,5 +41,6 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI?: ElectronAPI;
+    MusicKit?: unknown;
   }
 }
