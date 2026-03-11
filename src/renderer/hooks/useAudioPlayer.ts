@@ -30,7 +30,7 @@ export interface AudioPlayerControls {
 }
 
 interface MKInstance {
-  setQueue: (options: { song: string }) => Promise<void>;
+  setQueue: (options: Record<string, unknown>) => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
   stop: () => void;
