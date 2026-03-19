@@ -63,7 +63,7 @@ export function usePlayer() {
   return ctx;
 }
 
-function songToTrack(song: MKSong): Track {
+function songToTrack(song: MKSong, overrides?: { albumId?: string; artistId?: string }): Track {
   return {
     id: song.id,
     name: song.attributes.name,
@@ -72,6 +72,8 @@ function songToTrack(song: MKSong): Track {
     artworkUrl: getArtworkUrl(song.attributes.artwork, 300),
     durationMs: song.attributes.durationInMillis,
     type: song.type,
+    albumId: overrides?.albumId ?? song.relationships?.albums?.data?.[0]?.id,
+    artistId: overrides?.artistId ?? song.relationships?.artists?.data?.[0]?.id,
   };
 }
 
@@ -235,7 +237,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         const data = resp.data as { data?: Array<{ relationships?: { tracks?: { data: MKSong[] } } }> };
         const tracks = data.data?.[0]?.relationships?.tracks?.data;
         if (tracks && tracks.length > 0) {
-          const queue = tracks.map(songToTrack);
+          const queue = tracks.map((s) => songToTrack(s, { albumId: albumId }));
           await playTrack(queue[0], queue);
         }
       } catch (err) {
@@ -257,7 +259,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         const data = resp.data as { data?: Array<{ relationships?: { tracks?: { data: MKSong[] } } }> };
         const tracks = data.data?.[0]?.relationships?.tracks?.data;
         if (tracks && tracks.length > 0) {
-          const queue = tracks.map(songToTrack);
+          const queue = tracks.map((s) => songToTrack(s));
           await playTrack(queue[0], queue);
         }
       } catch (err) {

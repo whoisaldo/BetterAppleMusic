@@ -76,7 +76,6 @@ export function SearchPage() {
           term,
           types: ['songs', 'albums', 'artists', 'playlists'],
           limit: 25,
-          'relate[songs]': ['albums', 'artists'],
         });
         const results = (resp.data as { results?: Record<string, { data: unknown[] }> }).results ?? {};
         setSongs((results.songs?.data as MKSong[]) ?? []);
